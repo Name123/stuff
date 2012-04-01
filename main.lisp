@@ -1,9 +1,10 @@
+
 #!/usr/bin/sbcl --script
 
 ;(format t (caddr sb-ext:*posix-argv*))
 
 
-(defparameter *operators-list* (list #\+ #\- #\* #\/ #\^ #\( #\)))
+(defparameter *operators-list* (list #\+ #\- #\* #\/ #\^ ))
 
 (define-condition unknown-character (error)
   ((text :initarg :text :reader text)))
@@ -33,7 +34,9 @@
 
 (defun tokenize (str pos res)
    (cond ((>= pos (length str)) res)
-	  ((operator? (elt str pos)) 
+	  ((or (operator? (elt str pos))
+	       (char= (elt str pos) #\))
+	       (char= (elt str pos) #\())
 	   (tokenize str (+ pos 1) (cons (elt str pos) res)))
 	  ((space? (elt str pos)) (tokenize str (+ pos 1)  res))
 	  ((digit-char-p (elt str pos))
@@ -48,49 +51,47 @@
 	  
 (defun convert (str)
    (let ((tokens (reverse (tokenize str 0 '())))
-	(result #())
-	(stack #()))
-     (defun top (st) 
-       (elt st 0))
+	(result '())
+	(stack '()))
      (defun unary? (op)
        (char= op #\m))
      (defun unwind (ch pred)
-       (loop while (funcall pred ch) do
+       (loop while (and (not (null stack)) (funcall pred ch)) do
 	    (push (pop stack) result)))
      (defun need-unwind (op)
-       (and (not (null stack))
-	    (or 
-	     (and (unary? op) (<= (prior op) (prior (top stack))))
-	     (and (not (unary? op)) (< (prior op) (prior (top stack)))))))
+        (or 
+	  (and (unary? op) (> (prior (car stack)) (prior op)))
+	  (and (not (unary? op)) (>= (prior (car stack)) (prior op)))))
      (defun prior (op)
 	 (cond ((member op (list #\+ #\-)) 2)
 	       ((member op (list #\* #\\)) 3)
-	       ((char= op #\m) 4)
-	       ((char= op #\() 1)
-	       ((char= op #\)) 0)))
+	       ((char= op #\^) 4)
+	       ((char= op #\m) 5)
+	       ((char= op #\)) 1)
+	       ((char= op #\() 0)))
 		 
   (loop 
        for tok in tokens 
-       with stack = #()
        with un-m-expected = t
-       do (progn 
-	    (if (or (numberp tok) (funcall (charp #\)) tok) (and un-m-expected (funcall (charp  #\-) tok)))
-		(setf un-m-expected t)
-		(setf un-m-expected nil))
-	    (cond ((or (funcall (charp #\() tok) (numberp tok)) (push tok result))
+       do (cond ((numberp tok) (progn (push tok result) (setq un-m-expected nil)))
+		  ((funcall (charp #\() tok) (progn (push tok stack) (setq un-m-expected t)))
 		  ((operator? tok)
 		   (progn
-		     (if (and (char= tok #\-) un-m-expected)
+		     (when (and (char= tok #\-) un-m-expected)
 			 (setq tok #\m))
-		     (unwind tok #'need-unwind)))
-		  ((char= tok #\)) (unwind tok (lambda (x) (char= (top stack) #\()))))
-     result))))
+		     (unwind tok #'need-unwind)
+		     (push tok stack)
+		     (setq un-m-expected t)))
+		   ((char= tok #\)) (progn
+				     (unwind tok #'(lambda (x) (char/= (car stack) #\()))
+				     (pop stack)
+				     (setq un-m-expected t)))))
+       
+     (unwind 1 #'(lambda (x) t))
+     (reverse result)))
 
 		   
  
-		  
-		    
-
-;(tokenize "(1+2)*(3.55-6.88+(1))" 0 '())
+	  
 
 
