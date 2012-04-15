@@ -1,12 +1,9 @@
-
 #!/usr/bin/sbcl --script
 
-;(format t (caddr sb-ext:*posix-argv*))
 
+(defparameter *operators-list* (list #\+ #\- #\* #\/ #\^ #\m ))
 
-(defparameter *operators-list* (list #\+ #\- #\* #\/ #\^ ))
-
-(define-condition unknown-character (error)
+(define-condition parse-err (error)
   ((text :initarg :text :reader text)))
 
 
@@ -42,7 +39,7 @@
 	  ((digit-char-p (elt str pos))
 	   (let ((temp (read-number str pos)))
 	     (tokenize str (car temp) (cons (cadr temp) res))))
-	  (t (error 'unknown-character :text (format nil "Unknown character at position: ~a" pos)))))
+	  (t (error 'parse-err :text (format nil "Unknown character at position: ~a" pos)))))
 
 (defun charp (c)
   (lambda (x)
@@ -64,7 +61,7 @@
 	  (and (not (unary? op)) (>= (prior (car stack)) (prior op)))))
      (defun prior (op)
 	 (cond ((member op (list #\+ #\-)) 2)
-	       ((member op (list #\* #\\)) 3)
+	       ((member op (list #\* #\/)) 3)
 	       ((char= op #\^) 4)
 	       ((char= op #\m) 5)
 	       ((char= op #\)) 1)
@@ -85,12 +82,51 @@
 		   ((char= tok #\)) (progn
 				     (unwind tok #'(lambda (x) (char/= (car stack) #\()))
 				     (pop stack)
-				     (setq un-m-expected t)))))
+				     (setq un-m-expected nil)))))
        
      (unwind 1 #'(lambda (x) t))
      (reverse result)))
 
+(defun expr-eval (expr)
+  (let ((stack '()))
+    (defun stack-pop ()
+      (if (null stack)
+	  (error 'parse-err :text "Incorrect expression")
+	  (pop stack)))
+    (defun stack-eval-binary (tok)
+      (let ((op1 (stack-pop))
+	    (op2 (stack-pop)))
+	(cond ((funcall (charp #\+) tok) (push (+ op2 op1) stack))
+	      ((funcall (charp #\-) tok) (push (- op2 op1) stack))
+	      ((funcall (charp #\*) tok) (push  (* op2 op1) stack))
+	      ((funcall (charp #\/) tok)
+	       (if (= op1 0) 
+		   (error 'eval-error :text "Division by zero") 
+		   (push (/ op2 op1) stack)))
+	      ((funcall (charp #\^) tok)
+	       (if (and (= op2 0) (<= op1 0)) 
+		   (error 'eval-error :text "Incorrect power usage") 
+		   (push (expt op2 op1) stack)))
+	      (t (error 'parse-error :text "Internal error")))))
 		   
+    (defun stack-eval (tok)
+      (if (funcall (charp #\m) tok)
+	  (push (- (stack-pop)) stack)
+	  (stack-eval-binary tok)))
+     (loop for tok in expr
+       do (cond ((numberp tok) (push tok stack))
+		 ((operator? tok) (stack-eval tok))
+		 (t (error 'parse-err :text  "Incorrect expression"))))
+     (car stack)))
+
+
+(handler-case
+    (let ((args sb-ext:*posix-argv*))
+      (if (< (length args) 2)
+	  (format t "Not enough args")
+	  (format t "~a" (expr-eval (convert (cadr args))))))
+  (Parse-err (se) (format t se))
+  (eval-error (se) (format t se)))
  
 	  
 
