@@ -1,9 +1,9 @@
-#!/usr/bin/sbcl --script
+;#!/usr/bin/sbcl --script
 
 
 (defparameter *operators-list* (list #\+ #\- #\* #\/ #\^ #\m ))
 
-(define-condition parse-err (error)
+(define-condition err (error)
   ((text :initarg :text :reader text)))
 
 
@@ -91,7 +91,7 @@
   (let ((stack '()))
     (defun stack-pop ()
       (if (null stack)
-	  (error 'parse-err :text "Incorrect expression")
+	  (error 'err :text "Incorrect expression")
 	  (pop stack)))
     (defun stack-eval-binary (tok)
       (let ((op1 (stack-pop))
@@ -101,11 +101,11 @@
 	      ((funcall (charp #\*) tok) (push  (* op2 op1) stack))
 	      ((funcall (charp #\/) tok)
 	       (if (= op1 0) 
-		   (error 'eval-error :text "Division by zero") 
+		   (error 'err :text "Division by zero") 
 		   (push (/ op2 op1) stack)))
 	      ((funcall (charp #\^) tok)
 	       (if (and (= op2 0) (<= op1 0)) 
-		   (error 'eval-error :text "Incorrect power usage") 
+		   (error 'err :text "Incorrect power usage") 
 		   (push (expt op2 op1) stack)))
 	      (t (error 'parse-error :text "Internal error")))))
 		   
@@ -120,13 +120,13 @@
      (car stack)))
 
 
-(handler-case
-    (let ((args sb-ext:*posix-argv*))
-      (if (< (length args) 2)
-	  (format t "Not enough args")
-	  (format t "~a" (expr-eval (convert (cadr args))))))
-  (Parse-err (se) (format t se))
-  (eval-error (se) (format t se)))
+(defun main ()
+	(handler-case
+		(let ((args sb-ext:*posix-argv*))
+			(if (< (length args) 2)
+		(format t "Not enough args")
+		(format t "~a" (expr-eval (convert (cadr args))))))
+	(err (se) (format t se))))
  
 	  
 
